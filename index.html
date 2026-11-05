@@ -1,0 +1,310 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ortho-K Interactive Simulator</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #091525;
+    color: #eaf4ff;
+    font-family: Arial, sans-serif;
+  }
+  header { text-align: center; padding: 25px 12px 10px; }
+  h1 { margin: 0; color: #6bdcf7; }
+  p { color: #a9bed3; line-height: 1.5; }
+  .layout {
+    display: grid;
+    grid-template-columns: 270px 1fr;
+    gap: 20px;
+    max-width: 1250px;
+    margin: auto;
+    padding: 20px;
+  }
+  .panel, .viewer {
+    background: #14243a;
+    padding: 20px;
+    border-radius: 15px;
+  }
+  label { display: block; margin-top: 24px; }
+  input[type=range] { width: 100%; accent-color: #59d8ff; }
+  .value { float: right; color: #6bdcf7; }
+  button {
+    background: #237ca4;
+    border: 0;
+    color: white;
+    padding: 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-top: 18px;
+    width: 100%;
+  }
+  button:hover { background: #319bc7; }
+  canvas { width: 100%; background: #07111f; border-radius: 12px; }
+  .stats { display: flex; gap: 15px; flex-wrap: wrap; margin-top: 15px; }
+  .stat { flex: 1; background: #20354e; padding: 12px; border-radius: 9px; }
+  .stat strong { display: block; color: #65ddf8; font-size: 22px; }
+  .note { font-size: 13px; }
+  @media(max-width:800px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Orthokeratology Simulator</h1>
+  <p>Explore how temporary corneal reshaping changes the focal point of light.</p>
+</header>
+
+<div class="layout">
+  <section class="panel">
+    <h2>Controls</h2>
+
+    <label>Initial Myopia
+      <span class="value" id="myopiaVal">-3.00 D</span>
+    </label>
+    <input id="myopia" type="range" min="1" max="6"
+           step="0.25" value="3">
+
+    <label>Treatment Progress
+      <span class="value" id="progressVal">0%</span>
+    </label>
+    <input id="progress" type="range" min="0" max="100" value="0">
+
+    <label>Pupil Diameter
+      <span class="value" id="pupilVal">4 mm</span>
+    </label>
+    <input id="pupil" type="range" min="2" max="7"
+           step="0.5" value="4">
+
+    <label>
+      <input id="lens" type="checkbox" checked>
+      Show Ortho-K lens
+    </label>
+
+    <button id="animate">Simulate Overnight Treatment</button>
+    <button id="reset">Reset</button>
+
+    <p class="note">
+      Conceptual educational model. Changes in corneal curvature,
+      focal position and treatment time are illustrative rather
+      than clinically calibrated.
+    </p>
+  </section>
+
+  <section class="viewer">
+    <h2 id="stage">Before Treatment</h2>
+    <canvas id="eye" width="900" height="470"></canvas>
+
+    <div class="stats">
+      <div class="stat">
+        <span>Estimated residual myopia</span>
+        <strong id="residual">-3.00 D</strong>
+      </div>
+      <div class="stat">
+        <span>Corneal reshaping</span>
+        <strong id="shape">0%</strong>
+      </div>
+      <div class="stat">
+        <span>Focus</span>
+        <strong id="focus">Before retina</strong>
+      </div>
+    </div>
+
+    <p id="explanation"></p>
+  </section>
+</div>
+
+<script>
+const canvas = document.getElementById("eye");
+const ctx = canvas.getContext("2d");
+const myopia = document.getElementById("myopia");
+const progress = document.getElementById("progress");
+const pupil = document.getElementById("pupil");
+const lens = document.getElementById("lens");
+
+let timer = null;
+
+function line(x1,y1,x2,y2,color,width=2,dash=[]) {
+  ctx.beginPath();
+  ctx.setLineDash(dash);
+  ctx.strokeStyle=color;
+  ctx.lineWidth=width;
+  ctx.moveTo(x1,y1);
+  ctx.lineTo(x2,y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function draw() {
+  const d=Number(myopia.value);
+  const t=Number(progress.value)/100;
+  const p=Number(pupil.value);
+
+  document.getElementById("myopiaVal").textContent =
+    "-" + d.toFixed(2) + " D";
+  document.getElementById("progressVal").textContent =
+    Math.round(t*100) + "%";
+  document.getElementById("pupilVal").textContent=p+" mm";
+
+  const residual=d*(1-t);
+  document.getElementById("residual").textContent =
+    "-" + residual.toFixed(2)+" D";
+  document.getElementById("shape").textContent =
+    Math.round(t*100)+"%";
+
+  document.getElementById("focus").textContent =
+    residual<0.1 ? "At retina" : "Before retina";
+
+  document.getElementById("stage").textContent =
+    t===0 ? "Before Ortho-K" :
+    t===1 ? "After Ortho-K" : "Corneal Reshaping";
+
+  document.getElementById("explanation").textContent =
+    t===0
+      ? "Myopic eye: incoming parallel rays converge in front of the retina."
+      : t===1
+      ? "After idealized treatment, the flatter central cornea reduces optical power and the rays converge at the retina."
+      : "As the central cornea flattens, its refractive power decreases and the focal point moves toward the retina.";
+
+  ctx.clearRect(0,0,900,470);
+  const cy=235;
+  const retinaX=760;
+
+  // Eyeball cross-section
+  ctx.beginPath();
+  ctx.ellipse(545,cy,215,175,0,0,Math.PI*2);
+  ctx.fillStyle="#102c43";
+  ctx.fill();
+  ctx.strokeStyle="#6d9cbd";
+  ctx.lineWidth=3;
+  ctx.stroke();
+
+  // Retina
+  ctx.beginPath();
+  ctx.ellipse(545,cy,215,175,0,-0.55,0.55);
+  ctx.strokeStyle="#f5a65a";
+  ctx.lineWidth=7;
+  ctx.stroke();
+
+  // Cornea: central curvature decreases with treatment
+  const frontX=310+18*t;
+  function corneaX(y) {
+    const u=(y-cy)/115;
+    return frontX+35*u*u*(1-0.5*t);
+  }
+  ctx.beginPath();
+  for(let y=cy-115;y<=cy+115;y+=2) {
+    const x=corneaX(y);
+    if(y===cy-115) ctx.moveTo(x,y);
+    else ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle="#57dff8";
+  ctx.lineWidth=7;
+  ctx.stroke();
+
+  // Ortho-K lens (schematic)
+  if(lens.checked && t<1) {
+    ctx.beginPath();
+    for(let y=cy-125;y<=cy+125;y+=2) {
+      const u=(y-cy)/125;
+      const x=frontX-17+48*u*u;
+      if(y===cy-125)ctx.moveTo(x,y);
+      else ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle="#b88bff";
+    ctx.lineWidth=5;
+    ctx.stroke();
+  }
+
+  // Iris and adjustable pupil
+  const aperture=15+p*7;
+  line(370,cy-125,370,cy-aperture/2,"#a97445",11);
+  line(370,cy+aperture/2,370,cy+125,"#a97445",11);
+
+  // Crystalline lens
+  ctx.beginPath();
+  ctx.ellipse(410,cy,22,65,0,0,Math.PI*2);
+  ctx.fillStyle="rgba(130,205,250,0.16)";
+  ctx.fill();
+  ctx.strokeStyle="#9ed5fa";
+  ctx.lineWidth=3;
+  ctx.stroke();
+
+  // Optical axis
+  line(70,cy,800,cy,"#607184",1,[7,7]);
+
+  // Simplified rays: focus approaches retina with correction
+  const focusX=retinaX-residual*30;
+  const offsets=[-aperture/2,0,aperture/2];
+
+  offsets.forEach((offset,i)=>{
+    const y=cy+offset;
+    const x=corneaX(y);
+    const color=["#ffd166","#f9f871","#ffd166"][i];
+
+    line(60,y,x,y,color,2.5);
+    line(x,y,focusX,cy,color,2.5);
+
+    // Divergence after focal point
+    if(focusX<retinaX) {
+      const slope=(cy-y)/(focusX-x);
+      line(focusX,cy,retinaX,
+           cy+slope*(retinaX-focusX),color,2);
+    }
+  });
+
+  // Focal point
+  ctx.beginPath();
+  ctx.arc(focusX,cy,6,0,Math.PI*2);
+  ctx.fillStyle="#ff6b6b";
+  ctx.fill();
+
+  ctx.font="16px Arial";
+  ctx.fillStyle="#d7eaff";
+  ctx.fillText("Incoming light",65,140);
+  ctx.fillText("Cornea",265,92);
+  ctx.fillText("Retina",735,65);
+  ctx.fillText("Focal point",focusX-45,cy+40);
+  ctx.fillText("Crystalline lens",390,345);
+
+  if(lens.checked && t<1) {
+    ctx.fillStyle="#b88bff";
+    ctx.fillText("Ortho-K lens",170,375);
+    line(275,365,frontX-10,cy+85,"#b88bff",1);
+  }
+}
+
+[myopia,progress,pupil,lens].forEach(el=>{
+  el.addEventListener("input",draw);
+});
+
+document.getElementById("reset").onclick=()=>{
+  clearInterval(timer);
+  myopia.value=3;
+  progress.value=0;
+  pupil.value=4;
+  lens.checked=true;
+  draw();
+};
+
+document.getElementById("animate").onclick=()=>{
+  clearInterval(timer);
+  progress.value=0;
+  draw();
+  timer=setInterval(()=>{
+    let next=Number(progress.value)+1;
+    progress.value=Math.min(100,next);
+    draw();
+    if(next>=100)clearInterval(timer);
+  },45);
+};
+
+draw();
+</script>
+</body>
+</html>
